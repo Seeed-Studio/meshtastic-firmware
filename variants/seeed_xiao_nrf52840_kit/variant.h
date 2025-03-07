@@ -135,8 +135,8 @@ static const uint8_t SCL = PIN_WIRE_SCL;
 // GPS L76KB
 #define GPS_L76K
 #ifdef GPS_L76K
-#define PIN_GPS_RX 32+12 // 44
-#define PIN_GPS_TX 32+11 // 43
+#define PIN_GPS_RX D6 // 44
+#define PIN_GPS_TX D7 // 43
 #define HAS_GPS 1
 #define GPS_BAUDRATE 9600
 #define GPS_THREAD_INTERVAL 50
