@@ -59,7 +59,7 @@ extern "C" {
 
 
 #define BUTTON_PIN D0 // This is the Program Button
-// #define BUTTON_NEED_PULLUP   1
+#define BUTTON_NEED_PULLUP   1
 #define BUTTON_ACTIVE_LOW true
 #define BUTTON_ACTIVE_PULLUP false
 /*
@@ -142,7 +142,7 @@ static const uint8_t SCL = PIN_WIRE_SCL;
 #define GPS_THREAD_INTERVAL 50
 #define PIN_SERIAL1_RX PIN_GPS_TX
 #define PIN_SERIAL1_TX PIN_GPS_RX
-#define PIN_GPS_STANDBY 2
+//#define PIN_GPS_STANDBY 2        //cause the leck of pins, we give up the standby pin
 #endif
 
 
