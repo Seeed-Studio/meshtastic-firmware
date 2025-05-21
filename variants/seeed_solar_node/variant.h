@@ -74,7 +74,7 @@
 //  Communication Interfaces
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  I2C Configuration
-#define HAS_WIRE 1
+#define HAS_WIRE 0
 #define PIN_WIRE_SDA D14 // P0.09
 #define PIN_WIRE_SCL D15 // P0.10
 #define WIRE_INTERFACES_COUNT 1
@@ -106,10 +106,19 @@ static const uint8_t SCL = PIN_WIRE_SCL;
 #define BAT_READ                                                                                                                 \
     D19 // P0_14 = 14  Reads battery voltage from divider on signal board. (PIN_VBAT is reading voltage divider on XIAO and is
         // program pin 32 / or P0.31)
-#define BATTERY_SENSE_RESOLUTION_BITS 12
-#define ADC_MULTIPLIER 3.3
+// #define BATTERY_SENSE_RESOLUTION_BITS 12
+// #define ADC_MULTIPLIER 3.3
+// #define BATTERY_PIN PIN_VBAT // PIN_A7
+// #define AREF_VOLTAGE 3.3
+
+#define ADC_MULTIPLIER 3
 #define BATTERY_PIN PIN_VBAT // PIN_A7
-#define AREF_VOLTAGE 3.3
+
+#define BATTERY_SENSE_RESOLUTION_BITS 10
+#define CHARGE_LED 27 // P0_17 = 17  D27   YELLOW CHARGE LED
+#define HICHG 28      // P0_13 = 13  D28   Charge-select pin for Lipo for 100 mA instead of default 50mA charge
+#define EXT_CHRG_DETECT CHARGE_LED
+#define EXT_CHRG_DETECT_VALUE HIGH
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  GPS L76KB
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

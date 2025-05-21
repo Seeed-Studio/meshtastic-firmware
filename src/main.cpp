@@ -482,7 +482,7 @@ void setup()
 
     fsInit();
 
-#if defined(_SEEED_XIAO_NRF52840_SENSE_H_)
+#if defined(_SEEED_XIAO_NRF52840_SENSE_H_) || defined (_SEEED_SOLAR_NODE_H_)
 
     pinMode(CHARGE_LED, INPUT); // sets to detect if charge LED is on or off to see if USB is plugged in
 

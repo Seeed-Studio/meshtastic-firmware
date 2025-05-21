@@ -81,6 +81,9 @@ const uint32_t g_ADigitalPinMap[] = {
     24, // D24 P0.24 (QSPI_SIO_1 DO)
     22, // D25 P0.22 (QSPI_SIO_2 WP)
     23, // D26 P0.23 (QSPI_SIO_3 HOLD)
+
+    17,     // D27 P0.17 (CHARGE LED)
+    13,     // D28 P0.13 (HICHG)
 };
 }
 
