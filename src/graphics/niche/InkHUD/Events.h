@@ -30,6 +30,12 @@ class Events
     void onButtonShort(); // User button: short press
     void onButtonLong();  // User button: long press
 
+    void onJoystickUp();
+    void onJoystickDown();
+    void onJoystickLeft();
+    void onJoystickRight();
+    void onJoystickCenter();
+
     int beforeDeepSleep(void *unused);                             // Prepare for shutdown
     int beforeReboot(void *unused);                                // Prepare for reboot
     int onReceiveTextMessage(const meshtastic_MeshPacket *packet); // Store most recent text message
@@ -61,6 +67,9 @@ class Events
     // Get notified when the system is entering light sleep
     CallbackObserver<Events, void *> lightSleepObserver = CallbackObserver<Events, void *>(this, &Events::beforeLightSleep);
 #endif
+
+    // Get which system applet is currently handling input (if any)
+    SystemApplet *getHandler();
 
     // End any externalNotification beeping, buzzing, blinking etc
     bool dismissExternalNotification();

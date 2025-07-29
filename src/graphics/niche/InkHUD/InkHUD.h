@@ -56,13 +56,24 @@ class InkHUD
     void shortpress();
     void longpress();
 
+    // Handle input from a 4-direction "joystick style" input device
+    // - connected to an input source, in variant nicheGraphics.h
+
+    void joystickUp();
+    void joystickDown();
+    void joystickLeft();
+    void joystickRight();
+    void joystickCenter(); // "OK", "Select"
+
     // Trigger UI changes
     // - called by various InkHUD components
     // - suitable(?) for use by aux button, connected in variant nicheGraphics.h
 
     void nextApplet();
+    void previousApplet(); // Reverse of nextApplet
     void openMenu();
     void nextTile();
+    void previousTile(); // Reverse of nextTile
     void rotate();
     void toggleBatteryIcon();
 

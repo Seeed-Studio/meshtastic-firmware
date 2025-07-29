@@ -36,49 +36,123 @@ void InkHUD::Events::begin()
 #endif
 }
 
+// Short press of the user button
 void InkHUD::Events::onButtonShort()
 {
-    // Audio feedback (via buzzer)
-    // Short tone
     playChirp();
-    // Cancel any beeping, buzzing, blinking
-    // Some button handling suppressed if we are dismissing an external notification (see below)
-    bool dismissedExt = dismissExternalNotification();
 
-    // Check which system applet wants to handle the button press (if any)
-    SystemApplet *consumer = nullptr;
-    for (SystemApplet *sa : inkhud->systemApplets) {
-        if (sa->handleInput) {
-            consumer = sa;
-            break;
-        }
-    }
+    // Attempt to dismiss any notifications
+    if (dismissExternalNotification())
+        return;
 
-    // If no system applet is handling input, default behavior instead is to cycle applets
-    if (consumer)
-        consumer->onButtonShortPress();
-    else if (!dismissedExt) // Don't change applet if this button press silenced the external notification module
+    // Check which system applet wants to handle input (if any)
+    SystemApplet *handler = getHandler();
+
+    if (handler)
+        handler->onButtonShortPress();
+    else
         inkhud->nextApplet();
 }
 
+// Long press of the user button
 void InkHUD::Events::onButtonLong()
 {
-    // Audio feedback (via buzzer)
-    // Slightly longer than playChirp
     playBoop();
 
-    // Check which system applet wants to handle the button press (if any)
-    SystemApplet *consumer = nullptr;
-    for (SystemApplet *sa : inkhud->systemApplets) {
-        if (sa->handleInput) {
-            consumer = sa;
-            break;
-        }
-    }
+    // Attempt to dismiss any notifications
+    if (dismissExternalNotification())
+        return;
 
-    // If no system applet is handling input, default behavior instead is to open the menu
-    if (consumer)
-        consumer->onButtonLongPress();
+    // Check which system applet wants to handle input (if any)
+    SystemApplet *handler = getHandler();
+
+    if (handler)
+        handler->onButtonLongPress();
+    else
+        inkhud->openMenu();
+}
+
+void InkHUD::Events::onJoystickUp()
+{
+    playChirp();
+
+    // Attempt to dismiss any notifications
+    if (dismissExternalNotification())
+        return;
+
+    // Check which system applet wants to handle input (if any)
+    SystemApplet *handler = getHandler();
+
+    if (handler)
+        handler->onJoystickUp();
+    else
+        inkhud->previousApplet();
+}
+
+void InkHUD::Events::onJoystickDown()
+{
+    playChirp();
+
+    // Attempt to dismiss any notifications
+    if (dismissExternalNotification())
+        return;
+
+    // Check which system applet wants to handle input (if any)
+    SystemApplet *handler = getHandler();
+
+    if (handler)
+        handler->onJoystickDown();
+    else
+        inkhud->nextApplet();
+}
+
+void InkHUD::Events::onJoystickLeft()
+{
+    playChirp();
+
+    // Attempt to dismiss any notifications
+    if (dismissExternalNotification())
+        return;
+
+    // Check which system applet wants to handle input (if any)
+    SystemApplet *handler = getHandler();
+
+    if (handler)
+        handler->onJoystickLeft();
+    else
+        inkhud->previousTile();
+}
+
+void InkHUD::Events::onJoystickRight()
+{
+    playChirp();
+
+    // Attempt to dismiss any notifications
+    if (dismissExternalNotification())
+        return;
+
+    // Check which system applet wants to handle input (if any)
+    SystemApplet *handler = getHandler();
+
+    if (handler)
+        handler->onJoystickRight();
+    else
+        inkhud->nextTile();
+}
+
+void InkHUD::Events::onJoystickCenter()
+{
+    playBoop();
+
+    // Attempt to dismiss any notifications
+    if (dismissExternalNotification())
+        return;
+
+    // Check which system applet wants to handle input (if any)
+    SystemApplet *handler = getHandler();
+
+    if (handler)
+        handler->onJoystickCenter();
     else
         inkhud->openMenu();
 }
@@ -239,6 +313,20 @@ bool InkHUD::Events::dismissExternalNotification()
 
     // Inform that we did indeed dismiss an external notification
     return true;
+}
+
+InkHUD::SystemApplet *InkHUD::Events::getHandler()
+{
+    // Check which system applet wants to handle the button press (if any)
+    SystemApplet *handler = nullptr;
+    for (SystemApplet *sa : inkhud->systemApplets) {
+        if (sa->handleInput) {
+            handler = sa;
+            break;
+        }
+    }
+
+    return handler;
 }
 
 #endif

@@ -38,6 +38,8 @@ InkHUD::MenuApplet::MenuApplet() : concurrency::OSThread("MenuApplet")
     // - handles loading & parsing the canned messages
     // - handles setting / getting of canned messages via apps (Client API Admin Messages)
     cm.store = CannedMessageStore::getInstance();
+
+    pagePath.reserve(5); // Hopefully we never have more than 5-deep menus..
 }
 
 void InkHUD::MenuApplet::onForeground()
@@ -46,6 +48,7 @@ void InkHUD::MenuApplet::onForeground()
     systemInfoPanelHeight = getSystemInfoPanelHeight();
 
     // Display initial menu page
+    assert(pagePath.empty());
     showPage(MenuPage::ROOT);
 
     // If device has a backlight which isn't controlled by aux button:
@@ -75,6 +78,10 @@ void InkHUD::MenuApplet::onBackground()
     // Discard any data we generated while selecting a canned message
     // Frees heap mem
     freeCannedMessageResources();
+
+    // Clear the record of which menu pages we visited
+    // We had collected this data in case we needed to goBack, up one menu layer (joystick etc)
+    pagePath.clear();
 
     // If device has a backlight which isn't controlled by aux button:
     // Item in options submenu allows keeping backlight on after menu is closed
@@ -122,6 +129,26 @@ void InkHUD::MenuApplet::show(Tile *t)
 
     // Show menu
     bringToForeground();
+}
+
+// Move up one menu layer
+// This feature is used with joystick input devices or similar
+void InkHUD::MenuApplet::goBack()
+{
+    // If already at top-layer of menu, this action exits the menu entirely
+    if (pagePath.back() == MenuPage::ROOT)
+        showPage(EXIT);
+
+    else {
+        // Pretend we're entering the menu from a shallower level (simplifies pagePath handling in showPage method)
+
+        pagePath.pop_back(); // Drop current page
+        const MenuPage target = pagePath.back();
+        pagePath.pop_back(); // Drop the existing entry for our target page
+        showPage(target);    // Re-enter the target page
+    }
+
+    requestUpdate(EInk::UpdateTypes::FAST);
 }
 
 // Auto-exit the menu applet after a period of inactivity
@@ -350,24 +377,31 @@ void InkHUD::MenuApplet::showPage(MenuPage page)
 
     case EXIT:
         sendToBackground(); // Menu applet dismissed, allow normal behavior to resume
-        break;
+        // pagePath has now been cleared
+        return;
 
     default:
         LOG_WARN("Page not implemented");
     }
 
-    // Reset the cursor, unless reloading same page
-    // (or now out-of-bounds)
-    if (page != currentPage || cursor >= items.size()) {
-        cursor = 0;
+    // Cursor
 
-        // ROOT menu has special handling: unselected at first, to emphasise the system info panel
-        if (page == ROOT)
-            cursorShown = false;
+    // When opening root menu, move to top of page and hide cursor
+    // Hiding is special behavior: allows user to open menu for a quick peek at the clock, and then exit quickly
+    if (page == ROOT) {
+        cursor = 0;
+        cursorShown = false;
     }
 
-    // Remember which page we are on now
-    currentPage = page;
+    // If changing pages, move cursor to top of page
+    else if (pagePath.back() != page)
+        cursor = 0;
+
+    // If cursor now out of bounds, move to top of page
+    else if (cursor >= items.size())
+        cursor = 0;
+
+    pagePath.push_back(page); // Add new page to the path
 }
 
 void InkHUD::MenuApplet::onRender()
@@ -405,7 +439,7 @@ void InkHUD::MenuApplet::onRender()
 
     // If showing ROOT menu,
     // and the panel isn't yet scrolled off screen top
-    if (currentPage == ROOT) {
+    if (pagePath.back() == ROOT) {
         drawSystemInfoPanel(0, siT, width()); // Draw the panel.
         itemT = max(siT + siH, 0);            // Offset the first menu entry, so menu starts below the system info panel
     }
@@ -502,6 +536,43 @@ void InkHUD::MenuApplet::onButtonLongPress()
     // FAST keeps things responsive: important because we're dealing with user input
     if (!wantsToRender())
         requestUpdate(Drivers::EInk::UpdateTypes::FAST);
+}
+
+// Upwards input event from joystick
+// Move up to the previous menu item (or wrap around)
+void InkHUD::MenuApplet::onJoystickUp()
+{
+    OSThread::setIntervalFromNow(MENU_TIMEOUT_SEC * 1000UL); // Push the auto-close timer back
+
+    cursorShown = true;                                  // Show cursor, in case we just opened the menu
+    cursor = (cursor + items.size() - 1) % items.size(); // Move to previous item. This might wrap around.
+
+    requestUpdate(Drivers::EInk::UpdateTypes::FAST);
+}
+
+// Downwards input event from joystick
+// Move down to next menu item
+void InkHUD::MenuApplet::onJoystickDown()
+{
+    OSThread::setIntervalFromNow(MENU_TIMEOUT_SEC * 1000UL); // Push the auto-close timer back
+    onButtonShortPress();                                    // Scroll down the list of items
+}
+
+// Leftwards input event from joystick
+// Move back to previous layer of the menu
+// If already at root of menu: exit menu entirely
+void InkHUD::MenuApplet::onJoystickLeft()
+{
+    OSThread::setIntervalFromNow(MENU_TIMEOUT_SEC * 1000UL); // Push the auto-close timer back
+    goBack();
+}
+
+// Center press of joystick
+// Execute the currently selected menu item
+void InkHUD::MenuApplet::onJoystickCenter()
+{
+    OSThread::setIntervalFromNow(MENU_TIMEOUT_SEC * 1000UL); // Push the auto-close timer back
+    onButtonLongPress();                                     // Select item / close
 }
 
 // Dynamically create MenuItem entries for activating / deactivating Applets, for the "Applet Selection" submenu

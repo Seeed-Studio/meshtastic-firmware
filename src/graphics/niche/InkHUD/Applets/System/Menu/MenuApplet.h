@@ -23,13 +23,19 @@ class MenuApplet : public SystemApplet, public concurrency::OSThread
 {
   public:
     MenuApplet();
+    void onRender() override;
     void onForeground() override;
     void onBackground() override;
+
     void onButtonShortPress() override;
     void onButtonLongPress() override;
-    void onRender() override;
+    void onJoystickDown() override;
+    void onJoystickUp() override;
+    void onJoystickLeft() override;
+    void onJoystickCenter() override;
 
     void show(Tile *t); // Open the menu, onto a user tile
+    void goBack();      // Up one menu layer
 
   protected:
     Drivers::LatchingBacklight *backlight = nullptr; // Convenient access to the backlight singleton
@@ -51,9 +57,9 @@ class MenuApplet : public SystemApplet, public concurrency::OSThread
     void sendText(NodeNum dest, ChannelIndex channel, const char *message); // Send a text message to mesh
     void freeCannedMessageResources();                                      // Clear MenuApplet's canned message processing data
 
-    MenuPage currentPage = MenuPage::ROOT;
-    uint8_t cursor = 0;       // Which menu item is currently highlighted
-    bool cursorShown = false; // Is *any* item highlighted? (Root menu: no initial selection)
+    std::vector<MenuPage> pagePath; // Keep track of current page, and the path we took to reach it
+    uint8_t cursor = 0;             // Which menu item is currently highlighted
+    bool cursorShown = false;       // Is *any* item highlighted? (Root menu: no initial selection)
 
     uint16_t systemInfoPanelHeight = 0; // Need to know before we render
 

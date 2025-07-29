@@ -27,9 +27,9 @@ class WindowManager
 
     // - call these to make stuff change
 
-    void nextTile();
+    void nextTile(bool reverse = false);
     void openMenu();
-    void nextApplet();
+    void nextApplet(bool reverse = false);
     void rotate();
     void toggleBatteryIcon();
 

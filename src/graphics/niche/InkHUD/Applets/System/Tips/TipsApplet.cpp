@@ -232,4 +232,10 @@ void InkHUD::TipsApplet::onButtonShortPress()
         requestUpdate();
 }
 
+// Handle joystick center as if it were user button
+void InkHUD::TipsApplet::onJoystickCenter()
+{
+    onButtonShortPress();
+}
+
 #endif

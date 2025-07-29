@@ -28,6 +28,14 @@ class SystemApplet : public Applet
 
     virtual void onReboot() { onShutdown(); } // - handle reboot specially
 
+    virtual void onButtonShortPress() {}
+    virtual void onButtonLongPress() {}
+    virtual void onJoystickUp() {}
+    virtual void onJoystickDown() {}
+    virtual void onJoystickLeft() {}
+    virtual void onJoystickRight() {}
+    virtual void onJoystickCenter() {}
+
     // Other system applets may take precedence over our own system applet though
     // The order an applet is passed to WindowManager::addSystemApplet determines this hierarchy (added earlier = higher rank)
 
