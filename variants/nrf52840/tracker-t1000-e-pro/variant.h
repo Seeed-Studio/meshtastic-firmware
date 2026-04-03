@@ -156,6 +156,22 @@ extern "C" {
 
 #define HAS_SCREEN 0
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  On-board QSPI Flash
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// On-board QSPI Flash
+#define PIN_QSPI_SCK (19)       // P0.19
+#define PIN_QSPI_CS (20)        // P0.20
+#define PIN_QSPI_IO0 (21)       // P0.21
+#define PIN_QSPI_IO1 (22)       // P0.22       
+#define PIN_QSPI_IO2 (23)       // P0.23 
+#define PIN_QSPI_IO3 (32+0)     // P1.00
+#define EXT_FLASH_POWER_EN (15) // P0.15, power to flash, active high
+
+#define EXTERNAL_FLASH_DEVICES GD25Q64C
+#define EXTERNAL_FLASH_USE_QSPI
+
+
 #ifdef __cplusplus
 }
 #endif
@@ -163,4 +179,4 @@ extern "C" {
  *        Arduino objects - C++ only
  *----------------------------------------------------------------------------*/
 
-#endif // _VARIANT_TRACKER_T1000_E_
+#endif // _VARIANT_TRACKER_T1000_E_PRO

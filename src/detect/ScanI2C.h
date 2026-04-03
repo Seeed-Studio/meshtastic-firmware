@@ -83,6 +83,7 @@ class ScanI2C
         LTR553ALS,
         BHI260AP,
         BMM150,
+        BMM350,
         TSL2561,
         DRV2605,
         BH1750,
