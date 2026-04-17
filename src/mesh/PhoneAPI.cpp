@@ -197,7 +197,13 @@ bool PhoneAPI::handleToRadio(const uint8_t *buf, size_t bufLength)
             // Ignore nop messages
             break;
         }
-    } else {
+    } 
+    else if(pb_decode_from_bytes(buf, bufLength, &meshtastic_ShiftmeshConfig_msg, &shiftmeshCtrl))
+    {
+        LOG_DEBUG("Got ShiftmeshConfig message");
+        // write the switch config to fs
+    }
+    else {
         LOG_ERROR("Error: ignore malformed toradio");
     }
 

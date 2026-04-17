@@ -51,13 +51,216 @@
 #if !MESHTASTIC_EXCLUDE_BLUETOOTH
 #include "nimble/NimbleBluetooth.h"
 NimbleBluetooth *nimbleBluetooth = nullptr;
+
+/**
+ * Example: How to use Bluetooth scanning
+ * 
+ * 1. Make sure Bluetooth is initialized (after nimbleBluetooth->setup() in setup())
+ * 2. Set scan callback function to handle discovered devices
+ * 3. Start scanning
+ * 
+ * Usage example:
+ * 
+ * // Add after Bluetooth initialization in setup() function:
+ * if (nimbleBluetooth && nimbleBluetooth->isActive()) {
+ *     // Set scan callback function
+ *     nimbleBluetooth->setScanCallback([](NimBLEAdvertisedDevice* device) {
+ *         // Handle discovered device
+ *         std::string address = device->getAddress().toString();
+ *         int rssi = device->getRSSI();
+ *         std::string name = device->getName();
+ *         
+ *         LOG_INFO("Found device: %s, RSSI: %d", address.c_str(), rssi);
+ *         if (!name.empty()) {
+ *             LOG_INFO("  Name: %s", name.c_str());
+ *         }
+ *     });
+ *     
+ *     // Start scanning (auto-stop after 10 seconds)
+ *     nimbleBluetooth->startScanning(10);
+ *     
+ *     // Or start continuous scan (need to manually stop)
+ *     // nimbleBluetooth->startScanning(0);
+ * }
+ * 
+ * // Stop scanning:
+ * // nimbleBluetooth->stopScanning();
+ * 
+ * // Check if scanning is active:
+ * // if (nimbleBluetooth->isScanning()) {
+ * //     LOG_INFO("Scanning is active");
+ * // }
+ */
 #endif
 #endif
 
 #ifdef ARCH_NRF52
 #include "NRF52Bluetooth.h"
+#include <ble_gap.h>
 NRF52Bluetooth *nrf52Bluetooth = nullptr;
+NRF52Bluetooth::ScanCallback g_bleScanCallback = nullptr;
+
+// Manufacturer Data Broadcast Integration
+static uint8_t manufacturerTestData[80] = {0};
+
+/**
+ * Initialize manufacturer data with test data (1-80)
+ */
+void initManufacturerData()
+{
+    // Initialize with test data: 1, 2, 3, ..., 80
+    for (uint8_t i = 0; i < 80; i++) {
+        manufacturerTestData[i] = i + 1;
+    }
+    
+    if (nrf52Bluetooth) {
+        nrf52Bluetooth->setManufacturerData(manufacturerTestData, sizeof(manufacturerTestData));
+        LOG_INFO("Manufacturer data initialized: 80 bytes of test data (1-80)");
+    }
+}
+
+void ensureNrf52ManufacturerBroadcastInitialized()
+{
+    static bool initialized = false;
+
+    if (!nrf52Bluetooth) {
+        LOG_INFO("Skip manufacturer broadcast init: nrf52Bluetooth not ready yet");
+        return;
+    }
+
+    if (!initialized) {
+        initManufacturerData();
+        initialized = true;
+    }
+
+    if (!nrf52Bluetooth->isManufacturerDataBroadcasting()) {
+        nrf52Bluetooth->startManufacturerDataBroadcasting();
+        LOG_INFO("Manufacturer data broadcasting enabled after NRF52 Bluetooth setup");
+    }
+}
+
 #endif
+
+// BLE Scan callback functions (defined outside ARCH_NRF52 block to be accessible everywhere)
+char ad_data[31];
+static int scanCount = 0;  // Add counter to track scan callbacks
+
+static void logBlePayloadHex(const char *label, const uint8_t *data, uint16_t length)
+{
+    if (data == nullptr || length == 0) {
+        LOG_INFO("%s: <empty>", label);
+        return;
+    }
+
+    char hexBuf[(31 * 3) + 1] = {0};
+    size_t offset = 0;
+
+    for (uint16_t i = 0; i < length && offset + 4 < sizeof(hexBuf); ++i) {
+        offset += snprintf(hexBuf + offset, sizeof(hexBuf) - offset, "%02X ", data[i]);
+    }
+
+    if (offset > 0) {
+        hexBuf[offset - 1] = '\0';
+    }
+
+    LOG_INFO("%s (%u bytes): %s", label, length, hexBuf);
+}
+
+// Global callback function for BLE scan
+void ble_scan_callback(void* void_report) 
+{
+#ifdef ARCH_NRF52
+    scanCount++;  // Increment counter
+    // Convert to actual type
+    ble_gap_evt_adv_report_t* report = static_cast<ble_gap_evt_adv_report_t*>(void_report);
+    
+    // Get device address
+    char addr_str[18];
+    uint8_t* addr = report->peer_addr.addr;
+    snprintf(addr_str, sizeof(addr_str), "%02X:%02X:%02X:%02X:%02X:%02X",
+            addr[5], addr[4], addr[3], addr[2], addr[1], addr[0]);
+    
+    // Get RSSI
+    int rssi = report->rssi;
+    const char *packetType = report->type.scan_response ? "scan response" : "advertising";
+    
+    LOG_INFO("Scan count: %d, Found device: %s, RSSI: %d dBm, packet: %s", scanCount, addr_str, rssi, packetType);
+    
+    // Parse advertising data
+    const uint8_t* data = report->data.p_data;
+    uint16_t length = report->data.len;
+    bool manufacturerDataFound = false;
+
+    logBlePayloadHex("  Raw BLE payload", data, length);
+    
+    // Iterate through AD structure to parse device name, service UUID, etc.
+    for (uint16_t i = 0; i < length; ) 
+    {
+        uint8_t ad_length = data[i];
+        if (ad_length == 0) break;
+
+        if (i + ad_length >= length) {
+            LOG_WARN("  Malformed %s payload from %s: field length %u exceeds remaining %u bytes", packetType, addr_str,
+                     ad_length, length - i - 1);
+            break;
+        }
+        
+        uint8_t ad_type = data[i + 1];
+        const uint8_t* ad_data = &data[i + 2];
+        uint8_t ad_data_len = ad_length - 1;
+        
+        // AD Type 0x08/0x09: Device name
+        if (ad_type == 0x08 || ad_type == 0x09) {
+            char nameBuf[32];
+            int nameLen = min(ad_length - 1, (uint8_t)31);
+            memcpy(nameBuf, ad_data, nameLen);
+            nameBuf[nameLen] = '\0';
+            String name = String(nameBuf);
+            LOG_INFO("  Device Name: %s", name.c_str());
+        }
+
+        // AD Type 0xFF: Manufacturer specific data
+        if (ad_type == 0xFF) {
+            manufacturerDataFound = true;
+
+            if (ad_data_len >= 2) {
+                uint16_t companyId = ad_data[0] | (ad_data[1] << 8);
+                LOG_INFO("  Manufacturer Company ID: 0x%04X (%s)", companyId, packetType);
+            } else {
+                LOG_INFO("  Manufacturer data present in %s, but company ID is incomplete", packetType);
+            }
+
+            logBlePayloadHex("  Manufacturer Data", ad_data, ad_data_len);
+        }
+        
+        i += ad_length + 1;
+    }
+
+    if (!manufacturerDataFound) {
+        LOG_INFO("  No manufacturer data found in %s packet", packetType);
+    }
+#endif
+}
+
+void set_blescan_callback(void)
+{
+#ifdef ARCH_NRF52
+    LOG_DEBUG("set_blescan_callback called, nrf52Bluetooth = %p", (void*)nrf52Bluetooth);
+    g_bleScanCallback = ble_scan_callback;
+    if (nrf52Bluetooth) 
+    {
+        LOG_DEBUG("Setting scan callback...");
+        nrf52Bluetooth->setScanCallback(g_bleScanCallback);
+        LOG_DEBUG("Callback set, callback = %p", (void*)ble_scan_callback);
+    }
+    else
+    {
+        LOG_DEBUG("nrf52Bluetooth is NULL. Callback saved for later initialization.");
+    }
+#else
+    LOG_DEBUG("set_blescan_callback called on non-NRF52 platform (no-op)");
+#endif
+}
 
 #if HAS_WIFI || defined(USE_WS5500)
 #include "mesh/api/WiFiServerAPI.h"
@@ -162,7 +365,11 @@ SPIClass SPI1(HSPI);
 
 using namespace concurrency;
 
-volatile static const char slipstreamTZString[] = {USERPREFS_TZ_STRING};
+#ifdef USERPREFS_TZ_STRING
+volatile static const char slipstreamTZString[] = USERPREFS_TZ_STRING;
+#else
+volatile static const char slipstreamTZString[] = "tzplaceholder                                         ";
+#endif
 
 // We always create a screen object, but we only init it if we find the hardware
 graphics::Screen *screen = nullptr;
@@ -888,6 +1095,9 @@ void setup()
     service = new MeshService();
     service->init();
 
+
+    set_blescan_callback();
+
     // Set osk_found for trackball/encoder devices BEFORE setupModules so CannedMessageModule can detect it
 #if defined(HAS_TRACKBALL) || (defined(INPUTDRIVER_ENCODER_TYPE) && INPUTDRIVER_ENCODER_TYPE == 2)
 #ifndef HAS_PHYSICAL_KEYBOARD
@@ -1119,6 +1329,18 @@ void loop()
 #endif
 #ifdef ARCH_NRF52
     nrf52Loop();
+    if (nrf52Bluetooth) {
+        nrf52Bluetooth->updateManufacturerDataBroadcasting();
+    }
+
+    // {
+    //     static uint32_t lastscanReset;
+    //     if (!Throttle::isWithinTimespanMs(lastscanReset, 20 * 1000L)) {
+    //         lastscanReset = millis();
+    //         nrf52Bluetooth->isScanning() ? nrf52Bluetooth->stopScanning()
+    //                                  :nrf52Bluetooth->startScanning(0);
+    //     }
+    // }    
 #endif
     power->powerCommandsCheck();
 

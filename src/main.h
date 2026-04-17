@@ -18,6 +18,7 @@ extern NimbleBluetooth *nimbleBluetooth;
 #ifdef ARCH_NRF52
 #include "NRF52Bluetooth.h"
 extern NRF52Bluetooth *nrf52Bluetooth;
+void ensureNrf52ManufacturerBroadcastInitialized();
 #endif
 #if !MESHTASTIC_EXCLUDE_I2C
 #include "detect/ScanI2CTwoWire.h"

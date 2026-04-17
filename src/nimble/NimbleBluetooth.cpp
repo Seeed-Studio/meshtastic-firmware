@@ -989,6 +989,88 @@ void NimbleBluetooth::sendLog(const uint8_t *logMessage, size_t length)
 #endif
 }
 
+/**
+ * Callback class for handling BLE scan results
+ */
+class NimbleScanCallbacks : public NimBLEScanCallbacks
+{
+  private:
+    NimbleBluetooth* bluetoothInstance;
+
+  public:
+    NimbleScanCallbacks(NimbleBluetooth* instance) : bluetoothInstance(instance) {}
+
+    void onResult(NimBLEAdvertisedDevice* advertisedDevice)
+    {
+        // Get device information
+        std::string address = advertisedDevice->getAddress().toString();
+        int rssi = advertisedDevice->getRSSI();
+        std::string name = advertisedDevice->getName();
+        
+        LOG_INFO("BLE Device found: %s, RSSI: %d dBm", address.c_str(), rssi);
+        
+        if (!name.empty()) {
+            LOG_INFO("  Device Name: %s", name.c_str());
+        }
+        
+        // Log service UUIDs if available
+        if (advertisedDevice->haveServiceUUID()) {
+            LOG_INFO("  Service UUID: %s", advertisedDevice->getServiceUUID().toString().c_str());
+        }
+
+        // Call user callback if set
+        if (bluetoothInstance && bluetoothInstance->scanCallback) {
+            bluetoothInstance->scanCallback(advertisedDevice);
+        }
+    }
+
+    void onScanEnd(NimBLEScanResults results)
+    {
+        LOG_INFO("BLE Scan completed. Found %d devices.", results.getCount());
+    }
+};
+
+void NimbleBluetooth::setScanCallback(ScanCallback callback)
+{
+    scanCallback = callback;
+}
+
+void NimbleBluetooth::startScanning(uint32_t duration)
+{
+    LOG_INFO("Starting BLE scan%s", duration > 0 ? "" : " (continuous)");
+    
+    NimBLEScan* pBLEScan = NimBLEDevice::getScan();
+    
+    // Set scan parameters
+    pBLEScan->setScanCallbacks(new NimbleScanCallbacks(this), true);
+    pBLEScan->setActiveScan(true);  // Active scan to get more information
+    pBLEScan->setInterval(100);     // Scan interval in ms
+    pBLEScan->setWindow(99);        // Scan window in ms
+    
+    // Start scanning
+    if (duration > 0) {
+        pBLEScan->start(duration, false);  // Scan for specified duration
+    } else {
+        pBLEScan->start(0, false);  // Continuous scan
+    }
+}
+
+void NimbleBluetooth::stopScanning()
+{
+    LOG_INFO("Stopping BLE scan");
+    
+    NimBLEScan* pBLEScan = NimBLEDevice::getScan();
+    if (pBLEScan) {
+        pBLEScan->stop();
+    }
+}
+
+bool NimbleBluetooth::isScanning()
+{
+    NimBLEScan* pBLEScan = NimBLEDevice::getScan();
+    return pBLEScan && pBLEScan->isScanning();
+}
+
 void clearNVS()
 {
     NimBLEDevice::deleteAllBonds();

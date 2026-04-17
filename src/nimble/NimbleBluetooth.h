@@ -1,6 +1,11 @@
 #pragma once
 #include "BluetoothCommon.h"
 
+#include <functional>
+
+// Forward declaration
+class NimBLEAdvertisedDevice;
+
 class NimbleBluetooth : BluetoothApi
 {
   public:
@@ -17,11 +22,21 @@ class NimbleBluetooth : BluetoothApi
 #endif
     bool isDeInit = false;
 
+    // Bluetooth scanning methods
+    typedef std::function<void(NimBLEAdvertisedDevice*)> ScanCallback;
+    void startScanning(uint32_t duration = 0);
+    void stopScanning();
+    bool isScanning();
+    void setScanCallback(ScanCallback callback);
+
   private:
     void setupService();
 #if !defined(NIMBLE_TWO)
     void startAdvertising();
 #endif
+
+    // Scanning state
+    ScanCallback scanCallback = nullptr;
 };
 
 void setBluetoothEnable(bool enable);

@@ -91,6 +91,9 @@ class PhoneAPI
     meshtastic_ToRadio toRadioScratch = {
         0}; // this is a static scratch object, any data must be copied elsewhere before returning
 
+    meshtastic_ShiftmeshConfig shiftmeshCtrl = {
+        0};
+
     /// Use to ensure that clients don't get confused about old messages from the radio
     uint32_t config_nonce = 0;
     uint32_t readIndex = 0;

@@ -24,6 +24,9 @@
 #include "meshUtils.h"
 #include "power.h"
 #include <power/PowerHAL.h>
+#include "NRF52Bluetooth.h"
+
+extern NRF52Bluetooth::ScanCallback g_bleScanCallback;
 
 #include "Nrf52SaadcLock.h"
 #include "concurrency/LockGuard.h"
@@ -216,10 +219,17 @@ void setBluetoothEnable(bool enable)
             LOG_DEBUG("Init NRF52 Bluetooth");
             nrf52Bluetooth = new NRF52Bluetooth();
             nrf52Bluetooth->setup();
+            if (g_bleScanCallback) {
+                LOG_DEBUG("Applying stored NRF52 scan callback after initialization");
+                nrf52Bluetooth->setScanCallback(g_bleScanCallback);
+            }
+            ensureNrf52ManufacturerBroadcastInitialized();
         }
         // Already setup, apparently
-        else
+        else {
             nrf52Bluetooth->resumeAdvertising();
+            ensureNrf52ManufacturerBroadcastInitialized();
+        }
     }
     // Disable (if previously set-up)
     else if (nrf52Bluetooth) {

@@ -8,6 +8,9 @@
 #include "mesh/mesh-pb-constants.h"
 #include <bluefruit.h>
 #include <utility/bonding.h>
+#include <ble_gap.h>
+#include "concurrency/OSThread.h"
+#include <string.h>
 static BLEService meshBleService = BLEService(BLEUuid(MESH_SERVICE_UUID_16));
 static BLECharacteristic fromNum = BLECharacteristic(BLEUuid(FROMNUM_UUID_16));
 static BLECharacteristic fromRadio = BLECharacteristic(BLEUuid(FROMRADIO_UUID_16));
@@ -33,6 +36,114 @@ static uint8_t lastToRadio[MAX_TO_FROM_RADIO_SIZE];
 
 static uint16_t connectionHandle;
 static bool passkeyShowing;
+static constexpr uint8_t MAX_PRPH_CONNECTIONS = 2;
+
+static void configureAdvertisingParameters()
+{
+    Bluefruit.Advertising.restartOnDisconnect(true);
+    Bluefruit.Advertising.setInterval(32, 668); // in unit of 0.625 ms
+    Bluefruit.Advertising.setFastTimeout(30);   // number of seconds in fast mode
+}
+
+static void logManufacturerChunkHex(const uint8_t *data, uint8_t length)
+{
+    if (data == nullptr || length == 0) {
+        LOG_DEBUG("Manufacturer chunk raw: <empty>");
+        return;
+    }
+
+    char hexBuf[(32 * 3) + 1] = {0};
+    size_t offset = 0;
+
+    for (uint8_t i = 0; i < length && offset + 4 < sizeof(hexBuf); ++i) {
+        offset += snprintf(hexBuf + offset, sizeof(hexBuf) - offset, "%02X ", data[i]);
+    }
+
+    if (offset > 0) {
+        hexBuf[offset - 1] = '\0';
+    }
+
+    LOG_INFO("Manufacturer chunk raw (%u bytes): %s", length, hexBuf);
+}
+
+static void addShortNameToAdvertising()
+{
+    const char *deviceName = getDeviceName();
+    size_t fullNameLen = strlen(deviceName);
+    if (fullNameLen > 5) {
+        fullNameLen = 5;
+    }
+
+    Bluefruit.Advertising.addData(BLE_GAP_AD_TYPE_SHORT_LOCAL_NAME, deviceName, fullNameLen);
+}
+
+static bool buildBaseAdvertising()
+{
+    Bluefruit.Advertising.clearData();
+    bool ok = true;
+    ok &= Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
+    ok &= Bluefruit.Advertising.addTxPower();
+    ok &= Bluefruit.Advertising.addService(meshBleService);
+    addShortNameToAdvertising();
+    return ok;
+}
+
+static void setBaseScanResponse()
+{
+    Bluefruit.ScanResponse.clearData();
+    Bluefruit.ScanResponse.addName();
+}
+
+static bool setManufacturerChunkScanResponse(const uint8_t *manufacturerData, uint8_t manufacturerLen)
+{
+    Bluefruit.ScanResponse.clearData();
+    
+    Bluefruit.ScanResponse.addName();
+
+    logManufacturerChunkHex(manufacturerData, manufacturerLen);
+
+    if (!Bluefruit.ScanResponse.addManufacturerData(manufacturerData, manufacturerLen)) {
+        return false;
+    }
+
+
+    return true;
+}
+
+static bool restartAdvertisingIfPossible(const char *reason)
+{
+    configureAdvertisingParameters();
+
+    uint8_t connectionCount = Bluefruit.connected();
+    uint8_t advLen = Bluefruit.Advertising.count();
+    uint8_t scanRspLen = Bluefruit.ScanResponse.count();
+    if (connectionCount >= MAX_PRPH_CONNECTIONS) {
+        LOG_DEBUG("Skip advertising restart after %s: %u/%u peripheral links in use", reason, connectionCount,
+                  MAX_PRPH_CONNECTIONS);
+        return true;
+    }
+
+    if (Bluefruit.Advertising.isRunning()) {
+        if (connectionCount > 0) {
+            LOG_INFO("Advertising already active after %s (%u/%u links used), skip stop/start reconfigure", reason,
+                     connectionCount, MAX_PRPH_CONNECTIONS);
+            return true;
+        }
+    }
+
+    LOG_INFO("Restart advertising after %s (adv=%u bytes, scanRsp=%u bytes, running=%s)", reason, advLen, scanRspLen,
+             Bluefruit.Advertising.isRunning() ? "true" : "false");
+
+    bool started = Bluefruit.Advertising.start(0);
+    if (started) {
+        LOG_DEBUG("Advertising active after %s (%u/%u links used)", reason, connectionCount, MAX_PRPH_CONNECTIONS);
+    } else {
+        LOG_WARN("Failed to start advertising after %s (adv=%u bytes, scanRsp=%u bytes)", reason, advLen,
+                 scanRspLen);
+    }
+
+    return started;
+}
 
 class BluetoothPhoneAPI : public PhoneAPI
 {
@@ -68,6 +179,16 @@ void onConnect(uint16_t conn_handle)
     // Notify UI (or any other interested firmware components)
     meshtastic::BluetoothStatus newStatus(meshtastic::BluetoothStatus::ConnectionState::CONNECTED);
     bluetoothStatus->updateStatus(&newStatus);
+    
+    uint8_t connectionCount = Bluefruit.connected();
+    if (connectionCount < MAX_PRPH_CONNECTIONS) {
+        LOG_INFO("BLE keeping advertising active for additional connections (%u/%u)", connectionCount,
+                 MAX_PRPH_CONNECTIONS);
+        restartAdvertisingIfPossible("BLE connection");
+    } else {
+        LOG_INFO("BLE advertising paused: reached max peripheral connections (%u/%u)", connectionCount,
+                 MAX_PRPH_CONNECTIONS);
+    }
 }
 /**
  * Callback invoked when a connection is dropped
@@ -119,28 +240,24 @@ void onCccd(uint16_t conn_hdl, BLECharacteristic *chr, uint16_t cccd_value)
 }
 void startAdv(void)
 {
-    // Advertising packet
-    Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
-    // IncludeService UUID
-    // Bluefruit.ScanResponse.addService(meshBleService);
-    Bluefruit.ScanResponse.addTxPower();
-    Bluefruit.ScanResponse.addName();
-    // Include Name
-    // Bluefruit.Advertising.addName();
-    Bluefruit.Advertising.addService(meshBleService);
+    if (!buildBaseAdvertising()) {
+        LOG_WARN("Failed to build default BLE advertising payload");
+    }
+    setBaseScanResponse();
+
     /* Start Advertising
-     * - Enable auto advertising if disconnected
+     * - Enable multi-connection mode (BLE 4.2+ supports up to 8 simultaneous connections)
+     * - Continue advertising while connected (restartOnDisconnect is set to true)
      * - Interval:  fast mode = 20 ms, slow mode = 417,5 ms
      * - Timeout for fast mode is 30 seconds
-     * - Start(timeout) with timeout = 0 will advertise forever (until connected)
+     * - Start(timeout) with timeout = 0 will advertise forever
      *
      * For recommended advertising interval
      * https://developer.apple.com/library/content/qa/qa1931/_index.html
      */
-    Bluefruit.Advertising.restartOnDisconnect(true);
-    Bluefruit.Advertising.setInterval(32, 668); // in unit of 0.625 ms
-    Bluefruit.Advertising.setFastTimeout(30);   // number of seconds in fast mode
-    Bluefruit.Advertising.start(0); // 0 = Don't stop advertising after n seconds.  FIXME, we should stop advertising after X
+    if (restartAdvertisingIfPossible("BLE startup")) {
+        LOG_INFO("Advertising started (multi-connection mode enabled)");
+    }
 }
 // Just ack that the caller is allowed to read
 static void authorizeRead(uint16_t conn_hdl)
@@ -263,7 +380,8 @@ void NRF52Bluetooth::setup()
     LOG_INFO("Init the Bluefruit nRF52 module");
     Bluefruit.autoConnLed(false);
     Bluefruit.configPrphBandwidth(BANDWIDTH_MAX);
-    Bluefruit.begin();
+    
+    Bluefruit.begin(MAX_PRPH_CONNECTIONS, 0);
     // Clear existing data.
     Bluefruit.Advertising.stop();
     Bluefruit.Advertising.clearData();
@@ -478,4 +596,303 @@ void NRF52Bluetooth::sendLog(const uint8_t *logMessage, size_t length)
         logRadio.indicate(logMessage, (uint16_t)length);
     else
         logRadio.notify(logMessage, (uint16_t)length);
+}
+
+/**
+ * Static wrapper callback for BLE scan results
+ * This function is called by the Bluefruit library when a device is found
+ */
+void NRF52Bluetooth::scanCallbackWrapper(void* void_report)
+{
+    ble_gap_evt_adv_report_t* report = static_cast<ble_gap_evt_adv_report_t*>(void_report);
+    
+    if (!nrf52Bluetooth) {
+        LOG_DEBUG("scanCallbackWrapper: nrf52Bluetooth is NULL");
+        return;
+    }
+    
+    char addr_str[18];
+    uint8_t* addr = report->peer_addr.addr;
+    snprintf(addr_str, sizeof(addr_str), "%02X:%02X:%02X:%02X:%02X:%02X",
+             addr[5], addr[4], addr[3], addr[2], addr[1], addr[0]);
+    
+    LOG_DEBUG("scanCallbackWrapper called for %s, user callback is %s", addr_str, nrf52Bluetooth->scanCallback ? "SET" : "NOT SET");
+    
+    if (!nrf52Bluetooth->scanCallback) {
+        // No callback set, just log the device
+        LOG_INFO("BLE Device found: %s, RSSI: %d dBm", addr_str, report->rssi);
+    } else {
+        // Call user callback
+        LOG_DEBUG("Calling user callback for %s", addr_str);
+        nrf52Bluetooth->scanCallback(void_report);
+    }
+
+    // Bluefruit scanner stops after delivering a report to the callback,
+    // so resume scanning explicitly to continue receiving more devices.
+    if (Bluefruit.Scanner.isRunning()) {
+        Bluefruit.Scanner.resume();
+    }
+}
+
+void NRF52Bluetooth::setScanCallback(ScanCallback callback)
+{
+    scanCallback = callback;
+    LOG_INFO("Scan callback set: %s", callback ? "yes" : "no");
+}
+
+void NRF52Bluetooth::startScanning(uint16_t duration)
+{
+    LOG_INFO("Starting BLE scan%s, callback is %s", duration > 0 ? "" : " (continuous)", scanCallback ? "SET" : "NOT SET");
+    
+    // Create a lambda wrapper that matches the Bluefruit API signature
+    auto ble_callback = [](ble_gap_evt_adv_report_t* report) {
+        NRF52Bluetooth::scanCallbackWrapper(static_cast<void*>(report));
+    };
+    
+    // Set scan callback
+    Bluefruit.Scanner.setRxCallback(ble_callback);
+    
+    // Set scan parameters (using Bluefruit API)
+    Bluefruit.Scanner.setInterval(160, 160); // Interval and window in 0.625ms units (100ms interval, 100ms window for maximum coverage)
+    Bluefruit.Scanner.useActiveScan(true);   // Active scan so scan response payloads are requested and delivered too
+    
+    // Start scanning
+    if (duration > 0) {
+        // Scan for specified duration (in seconds)
+        Bluefruit.Scanner.start(duration);
+    } else {
+        // Continuous scan
+        Bluefruit.Scanner.start(0);
+    }
+}
+
+void NRF52Bluetooth::stopScanning()
+{
+    LOG_INFO("Stopping BLE scan");
+    Bluefruit.Scanner.stop();
+}
+
+bool NRF52Bluetooth::isScanning()
+{
+    return Bluefruit.Scanner.isRunning();
+}
+
+// ============================================================================
+// Manufacturer Data Broadcaster Implementation
+// ============================================================================
+
+/**
+ * Manufacturer Data Broadcaster class
+ * Handles broadcasting 80 bytes of manufacturer data in 4 segments
+ * When enabled, cycles through segments and rewrites the active BLE scan response payload
+ * When disabled, restores the default advertising/scan response payloads
+ */
+class ManufacturerDataBroadcaster : public concurrency::OSThread
+{
+  private:
+    uint8_t manufacturerData[MANUFACTURER_DATA_MAX_SIZE];
+    uint8_t dataLength;
+    uint8_t sequenceNumber;
+    uint8_t currentSegment;
+    uint32_t lastUpdateTime;
+    bool enabled;
+    NRF52Bluetooth* bluetooth;
+
+  public:
+    ManufacturerDataBroadcaster(NRF52Bluetooth* bt) 
+        : OSThread("ManufacturerDataBroadcaster"), bluetooth(bt)
+    {
+        // Initialize with test data (1-80)
+        for (uint8_t i = 0; i < MANUFACTURER_DATA_MAX_SIZE; i++) {
+            manufacturerData[i] = i + 1;
+        }
+        dataLength = MANUFACTURER_DATA_MAX_SIZE;
+        sequenceNumber = 0;
+        currentSegment = 0;
+        lastUpdateTime = 0;
+        enabled = false;
+    }
+
+    void setData(const uint8_t* data, size_t length)
+    {
+        if (length > MANUFACTURER_DATA_MAX_SIZE) {
+            LOG_WARN("Manufacturer data too large, truncating to %d bytes", MANUFACTURER_DATA_MAX_SIZE);
+            length = MANUFACTURER_DATA_MAX_SIZE;
+        }
+        
+        memcpy(manufacturerData, data, length);
+        dataLength = length;
+        sequenceNumber++;
+        LOG_INFO("Manufacturer data updated to %d bytes, sequence %d", dataLength, sequenceNumber);
+        
+        if (enabled) {
+            // Reset to first segment if we're currently broadcasting
+            currentSegment = 0;
+            updateAdvertisingPayload();
+        }
+    }
+
+    void update() // Public method to update broadcast manually
+    {
+        if (enabled) {
+            uint32_t currentTime = millis();
+            
+            // Check if it's time to update
+            if (currentTime - lastUpdateTime >= MANUFACTURER_BROADCAST_INTERVAL_MS) {
+                lastUpdateTime = currentTime;
+                LOG_INFO("Manufacturer broadcast tick: segment=%u/%u", currentSegment + 1, MANUFACTURER_DATA_SEGMENTS);
+                updateAdvertisingPayload();
+            }
+        }
+    }
+
+    void start()
+    {
+        if (!enabled) {
+            enabled = true;
+            currentSegment = 0;
+            lastUpdateTime = millis();
+            LOG_INFO("Manufacturer data broadcasting started");
+            
+            // Update immediately
+            updateAdvertisingPayload();
+        }
+    }
+
+    void stop()
+    {
+        if (enabled) {
+            enabled = false;
+            lastUpdateTime = 0;
+            LOG_INFO("Manufacturer data broadcasting stopped");
+            
+            // Restore original advertising payload
+            restoreDefaultAdvertisingPayload();
+        }
+    }
+
+    bool isEnabled() const { return enabled; }
+
+  protected:
+    virtual int32_t runOnce() override
+    {
+        if (!enabled) {
+            return INT32_MAX; // Don't run if not enabled
+        }
+        return MANUFACTURER_BROADCAST_INTERVAL_MS; // Run every 500ms
+    }
+
+  private:
+    void updateAdvertisingPayload()
+    {
+        std::vector<uint8_t> packet = prepareManufacturerDataPacket();
+        uint8_t connectionCount = Bluefruit.connected();
+        bool advertisingRunning = Bluefruit.Advertising.isRunning();
+
+        if (!setManufacturerChunkScanResponse(packet.data(), static_cast<uint8_t>(packet.size()))) {
+            LOG_ERROR("Failed to update BLE scan response before manufacturer update");
+            return;
+        }
+
+        if (!advertisingRunning) {
+            if (!restartAdvertisingIfPossible("manufacturer data update")) {
+                LOG_WARN("Advertising payload updated but could not restart advertising");
+            }
+        } else if (connectionCount > 0) {
+            LOG_INFO("Manufacturer scan response updated while connected (%u/%u), keeping current advertising session",
+                     connectionCount, MAX_PRPH_CONNECTIONS);
+        } else {
+            if (!restartAdvertisingIfPossible("manufacturer data update")) {
+                LOG_WARN("Advertising payload updated but could not restart advertising");
+            }
+        }
+
+        LOG_INFO("Advertising manufacturer chunk %d/%d, payload=%d bytes",
+             currentSegment + 1, MANUFACTURER_DATA_SEGMENTS, packet.size());
+
+        currentSegment++;
+        if (currentSegment >= MANUFACTURER_DATA_SEGMENTS) {
+            currentSegment = 0;
+        }
+    }
+
+    void restoreDefaultAdvertisingPayload()
+    {
+        setBaseScanResponse();
+
+        if (!restartAdvertisingIfPossible("manufacturer data stop")) {
+            LOG_WARN("Default BLE payload restored but advertising restart failed");
+        }
+
+        LOG_DEBUG("Restored default BLE payload");
+    }
+
+    std::vector<uint8_t> prepareManufacturerDataPacket()
+    {
+        uint16_t offset = currentSegment * MANUFACTURER_DATA_SEGMENT_SIZE;
+        uint16_t remainingBytes = dataLength - offset;
+        uint8_t dataBytes = (remainingBytes > MANUFACTURER_DATA_SEGMENT_SIZE) 
+                           ? MANUFACTURER_DATA_SEGMENT_SIZE 
+                           : remainingBytes;
+        
+        std::vector<uint8_t> packet;
+        packet.reserve(4 + dataBytes);
+        
+        packet.push_back(MANUFACTURER_ID & 0xFF);
+        packet.push_back((MANUFACTURER_ID >> 8) & 0xFF);
+
+        // High nibble = current segment index, low nibble = total segment count.
+        packet.push_back(static_cast<uint8_t>(((currentSegment & 0x0F) << 4) | (MANUFACTURER_DATA_SEGMENTS & 0x0F)));
+        packet.push_back(dataBytes);
+
+        for (uint8_t i = 0; i < dataBytes; i++) {
+            packet.push_back(manufacturerData[offset + i]);
+        }
+        
+        return packet;
+    }
+};
+
+// Static instance
+static ManufacturerDataBroadcaster* sManufacturerDataBroadcaster = nullptr;
+
+// ============================================================================
+// NRF52Bluetooth Manufacturer Data Methods
+// ============================================================================
+
+void NRF52Bluetooth::setManufacturerData(const uint8_t* data, size_t length)
+{
+    if (!mfgDataBroadcaster) {
+        mfgDataBroadcaster = new ManufacturerDataBroadcaster(this);
+    }
+
+    mfgDataBroadcaster->setData(data, length);
+}
+
+void NRF52Bluetooth::startManufacturerDataBroadcasting()
+{
+    if (!mfgDataBroadcaster) {
+        mfgDataBroadcaster = new ManufacturerDataBroadcaster(this);
+    }
+    
+    mfgDataBroadcaster->start();
+}
+
+void NRF52Bluetooth::stopManufacturerDataBroadcasting()
+{
+    if (mfgDataBroadcaster) {
+        mfgDataBroadcaster->stop();
+    }
+}
+
+bool NRF52Bluetooth::isManufacturerDataBroadcasting()
+{
+    return (mfgDataBroadcaster && mfgDataBroadcaster->isEnabled());
+}
+
+void NRF52Bluetooth::updateManufacturerDataBroadcasting()
+{
+    if (mfgDataBroadcaster) {
+        mfgDataBroadcaster->update();
+    }
 }
