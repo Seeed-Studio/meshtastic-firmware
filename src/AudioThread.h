@@ -100,7 +100,7 @@ class AudioThread : public concurrency::OSThread
     {
         audioOut = std::unique_ptr<AudioOutputI2S>(new AudioOutputI2S(1, AudioOutputI2S::EXTERNAL_I2S));
         audioOut->SetPinout(DAC_I2S_BCK, DAC_I2S_WS, DAC_I2S_DOUT, DAC_I2S_MCLK);
-        audioOut->SetGain(0.2);
+        audioOut->SetGain(0.3);
     };
 
     std::unique_ptr<AudioGeneratorRTTTL> i2sRtttl = nullptr;

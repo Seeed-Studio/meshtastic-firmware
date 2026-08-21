@@ -1107,6 +1107,9 @@ void setup()
     i2cScanner.reset();
 #endif
 
+    //test
+    playStartMelody();
+
 #if !defined(MESHTASTIC_EXCLUDE_PKI)
     // warn the user about a low entropy key
     if (nodeDB->keyIsLowEntropy && !nodeDB->hasWarned) {
