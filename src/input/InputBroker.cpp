@@ -322,7 +322,14 @@ void InputBroker::Init()
         concurrency::mainDelay.interruptFromISR(&higherWake);
     };
     backConfig.singlePress = INPUT_BROKER_ALT_PRESS;
+#ifdef ALT_BUTTON_LONG_PRESS_EVENT
+    backConfig.longPress = ALT_BUTTON_LONG_PRESS_EVENT;
+#else
     backConfig.longPress = INPUT_BROKER_ALT_LONG;
+#endif
+#ifdef ALT_BUTTON_DOUBLE_PRESS_EVENT
+    backConfig.doublePress = ALT_BUTTON_DOUBLE_PRESS_EVENT;
+#endif
     backConfig.longPressTime = 500;
     BackButtonThread->initButton(backConfig);
 #endif
@@ -404,7 +411,14 @@ void InputBroker::Init()
             concurrency::mainDelay.interruptFromISR(&higherWake);
         };
         userConfig.singlePress = INPUT_BROKER_USER_PRESS;
+#ifdef BUTTON_LONG_PRESS_EVENT
+        userConfig.longPress = BUTTON_LONG_PRESS_EVENT;
+#else
         userConfig.longPress = INPUT_BROKER_SELECT;
+#endif
+#ifdef BUTTON_DOUBLE_PRESS_EVENT
+        userConfig.doublePress = BUTTON_DOUBLE_PRESS_EVENT;
+#endif
         userConfig.longPressTime = 500;
         userConfig.longLongPress = INPUT_BROKER_SHUTDOWN;
         UserButtonThread->initButton(userConfig);

@@ -102,7 +102,9 @@ bool ButtonThread::initButton(const ButtonConfig &config)
 #endif
     userButton.setPressMs(_longPressTime);
 
-    if (screen) {
+    if (config.doublePress != INPUT_BROKER_NONE || config.triplePress != INPUT_BROKER_NONE) {
+        userButton.setClickMs(BUTTON_CLICK_MS);
+    } else if (screen) {
         userButton.setClickMs(20);
     } else {
         userButton.setClickMs(BUTTON_CLICK_MS);

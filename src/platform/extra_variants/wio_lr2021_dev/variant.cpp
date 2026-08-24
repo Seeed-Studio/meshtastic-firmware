@@ -101,13 +101,14 @@ void lateInitVariant()
     audioPins.addI2S(PinFunction::CODEC, DAC_I2S_MCLK, DAC_I2S_BCK, DAC_I2S_WS, DAC_I2S_DOUT, DAC_I2S_DIN);
 
     CodecConfig config;
-    config.input_device = ADC_INPUT_LINE1;
+    config.input_device = ADC_INPUT_NONE;
     config.output_device = DAC_OUTPUT_ALL;
     config.i2s.bits = BIT_LENGTH_16BITS;
-    config.i2s.rate = RATE_16K;
+    config.i2s.rate = RATE_22K;
 
     if (audioBoard.begin(config)) {
-        audioBoard.setVolume(100); // ES8311 DAC volume, 0~100
+        audioBoard.setVolume(60); // ES8311 DAC volume, 0~100
+        LOG_INFO("Wio LR2021: ES8311 initialized at 22.05 kHz");
     } else {
         LOG_WARN("Wio LR2021: failed to initialize ES8311");
     }
@@ -130,6 +131,13 @@ void earlyInitVariant()
         LOG_WARN("Wio LR2021: failed to configure PCA9535 audio amp enable");
     }
 #endif
+
+#if PCA9535_LORA_RESET_PIN < 16
+    if (!configurePca9535Output(PCA9535_LORA_RESET_PIN, true)) {
+        LOG_WARN("Wio LR2021: failed to configure PCA9535 LoRa reset");
+    }
+#endif
+
 
 }
 

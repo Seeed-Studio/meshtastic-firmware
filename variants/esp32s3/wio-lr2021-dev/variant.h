@@ -28,16 +28,24 @@
 #define LR2021_NRESET_PIN   WIO_LR2021_PIN_NC
 #define LR2021_BUSY_PIN     7
 #define LR2021_IRQ_DIO_NUM  8
+// The module reference is a TCXO powered through the radio (same as Seeed mesh tracker X1).
+// Without this, setTCXO() is skipped, the HF XOSC never starts, and every calibration
+// fails with device error 0x2081 (HF_XOSC_START | IMG_CALIB | SRC_CALIB).
+#define LR2021_DIO3_TCXO_VOLTAGE 3.0
 
 // BOOT is the primary BaseUI button. The second button is a direct ESP32-S3 GPIO.
 #define BUTTON_PIN 0
 #define BUTTON_NEED_PULLUP
+#define BUTTON_DOUBLE_PRESS_EVENT INPUT_BROKER_SELECT
+#define BUTTON_LONG_PRESS_EVENT   INPUT_BROKER_DOWN
 
 #define WIO_LR2021_ALT_BUTTON_PIN 46
 #if WIO_LR2021_ALT_BUTTON_PIN >= 0
 #define ALT_BUTTON_PIN WIO_LR2021_ALT_BUTTON_PIN
 #define ALT_BUTTON_ACTIVE_LOW       false
-#define ALT_BUTTON_ACTIVE_PULLUP    true
+#define ALT_BUTTON_ACTIVE_PULLUP    false
+#define ALT_BUTTON_DOUBLE_PRESS_EVENT INPUT_BROKER_CANCEL
+#define ALT_BUTTON_LONG_PRESS_EVENT   INPUT_BROKER_UP
 #endif
 
 // PCA9535 (A0/A1/A2 low by default). Ports use the range 0..15.
@@ -46,7 +54,7 @@
 #define PCA9535_OLED_ENABLE_PIN     3
 #define PCA9535_OLED_ENABLE_LEVEL   HIGH
 #define PCA9535_AUDIO_ENABLE_PIN    2
-
+#define PCA9535_LORA_RESET_PIN      11
 // ES8311 codec and I2S speaker.
 #define ES8311_I2C_ADDR      0x18
 #define DAC_I2S_MCLK         41
@@ -58,7 +66,7 @@
 #if DAC_I2S_MCLK >= 0 && DAC_I2S_BCK >= 0 && DAC_I2S_WS >= 0 && DAC_I2S_DOUT >= 0
 #define HAS_I2S
 void wioLr2021SetAudioAmp(bool enabled);
-#define AUDIO_AMP_ENABLE(on) wioLr2021SetAudioAmp(on)
+// #define AUDIO_AMP_ENABLE(on) wioLr2021SetAudioAmp(on)
 #endif
 
 // Status LED. Set LED_STATE_ON to LOW for an active-low LED.
