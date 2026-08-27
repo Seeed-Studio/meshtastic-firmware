@@ -107,7 +107,7 @@ void lateInitVariant()
     config.i2s.rate = RATE_22K;
 
     if (audioBoard.begin(config)) {
-        audioBoard.setVolume(60); // ES8311 DAC volume, 0~100
+        audioBoard.setVolume(50); // ES8311 DAC volume, 0~100
         LOG_INFO("Wio LR2021: ES8311 initialized at 22.05 kHz");
     } else {
         LOG_WARN("Wio LR2021: failed to initialize ES8311");
