@@ -5,6 +5,7 @@
 #include "detect/ScanI2C.h"
 #include "mesh/generated/meshtastic/config.pb.h"
 #include <OLEDDisplay.h>
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <string>
@@ -277,6 +278,9 @@ class Screen : public concurrency::OSThread
 
     bool isOverlayBannerShowing();
 
+    // Thread-safe snapshot of whether the text-message frame is currently shown.
+    bool isTextMessageFrameShown() const;
+
     // True if the always-present games frame is the one currently on screen. Lets the games module
     // ignore D-pad input when the player has navigated to a different frame.
     bool isGamesFrameShown();
@@ -286,6 +290,9 @@ class Screen : public concurrency::OSThread
     // Stores the last 4 of our hardware ID, to make finding the device for pairing easier
     // FIXME: Needs refactoring and getMacAddr needs to be moved to a utility class
     char ourId[5];
+
+    // if we have a step counter, this stores the number of steps.
+    uint32_t steps = 0;
 
     /// Initializes the UI, turns on the display, starts showing boot screen.
     //
@@ -798,6 +805,7 @@ class Screen : public concurrency::OSThread
     // Whether we are showing the regular screen (as opposed to booth screen or
     // Bluetooth PIN screen)
     bool showingNormalScreen = false;
+    std::atomic<bool> textMessageFrameShown{false};
     /// Track USB power state to only wake screen on actual power state changes
     bool lastPowerUSBState = false;
 
