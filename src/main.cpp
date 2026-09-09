@@ -1175,12 +1175,8 @@ void setup()
 
     lateInitVariant(); // Do board specific init (see extra_variants/README.md for documentation)
 
-<<<<<<< HEAD
-    // Play only after board-specific peripherals such as external audio codecs are initialized.
-=======
     // Must follow lateInitVariant(): on I2S boards audioThread and the codec are only up by this point.
     // Skipped for power-saving tracker/sensor roles.
->>>>>>> 3683566f62575f96ba47e2ee5b51b4fbc27e2d10
     if (config.power.is_power_saving == true &&
         IS_ONE_OF(config.device.role, meshtastic_Config_DeviceConfig_Role_TRACKER,
                   meshtastic_Config_DeviceConfig_Role_TAK_TRACKER, meshtastic_Config_DeviceConfig_Role_SENSOR))

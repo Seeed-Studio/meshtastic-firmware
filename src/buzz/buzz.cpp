@@ -76,6 +76,16 @@ void playTonesRTTTL(const ToneDuration *tone_durations, int size)
         int dur = 32; // default duration
         if (td.duration_ms >= 1000)
             dur = 1;
+        else if (td.duration_ms >= 500)
+            dur = 2;
+        else if (td.duration_ms >= 250)
+            dur = 4;
+        else if (td.duration_ms >= 125)
+            dur = 8;
+        else if (td.duration_ms >= 62)
+            dur = 16;
+        else
+            dur = 32;
 
         auto it = freqToNote.find(td.frequency_khz);
         const char *note = (it != freqToNote.end()) ? it->second : "p"; // unknown freq -> rest
