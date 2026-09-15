@@ -20,7 +20,7 @@
 #define LORA_SCK            4
 #define LORA_MISO           5
 #define LORA_MOSI           6
-#define LORA_CS             21
+#define LORA_CS             40
 #define LORA_DIO1           45
 
 #define LR2021_SPI_NSS_PIN  LORA_CS
@@ -51,10 +51,14 @@
 // PCA9535 (A0/A1/A2 low by default). Ports use the range 0..15.
 #define WIO_LR2021_PCA9535_ADDR     0x21
 #define WIO_LR2021_PCA9535_INT      3
+
 #define PCA9535_OLED_ENABLE_PIN     3
+#define PCA9535_OLED_RESET_PIN      5
 #define PCA9535_OLED_ENABLE_LEVEL   HIGH
 #define PCA9535_AUDIO_ENABLE_PIN    2
 #define PCA9535_LORA_RESET_PIN      11
+#define PCA9535_BAT_ENABLE_PIN      8
+
 // ES8311 codec and I2S speaker.
 #define ES8311_I2C_ADDR      0x18
 #define DAC_I2S_MCLK         41
@@ -77,9 +81,11 @@ void wioLr2021SetAudioAmp(bool enabled);
 #endif
 
 // Optional battery ADC. Set the divider ratio before enabling this pin.
-#define WIO_LR2021_BATTERY_PIN WIO_LR2021_PIN_NC
+#define WIO_LR2021_BATTERY_PIN 8
+// #define WIO_LR2021_BATTERY_PIN WIO_LR2021_PIN_NC
 #if WIO_LR2021_BATTERY_PIN >= 0
 #define BATTERY_PIN WIO_LR2021_BATTERY_PIN
+#define ADC_CHANNEL ADC_CHANNEL_7
 #define ADC_MULTIPLIER 2.0
 #define BATTERY_SENSE_RESOLUTION_BITS 12
 #endif

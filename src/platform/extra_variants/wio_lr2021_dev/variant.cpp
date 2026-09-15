@@ -81,6 +81,15 @@ bool configurePca9535Output(uint8_t pin, bool initialHigh)
 DriverPins audioPins;
 AudioBoard audioBoard(AudioDriverES8311, audioPins);
 #endif
+
+// earlyInitVariant() runs before consoleInit(): a LOG_* call there crashes the device
+// (see extra_variants/README.md). PCA9535 results are stashed here and reported from
+// lateInitVariant() instead.
+bool oledPowerOk = false;
+bool oledResetOk = false;
+bool audioAmpOk = false;
+bool loraResetOk = false;
+bool batAdcOk = false;
 } // namespace
 
 #if defined(HAS_I2S) && PCA9535_AUDIO_ENABLE_PIN < 16
@@ -96,6 +105,30 @@ void wioLr2021SetAudioAmp(bool)
 
 void lateInitVariant()
 {
+#if PCA9535_OLED_ENABLE_PIN < 16
+    if (!oledPowerOk) {
+        LOG_WARN("Wio LR2021: failed to enable OLED power");
+    }
+    if (!oledResetOk) {
+        LOG_WARN("Wio LR2021: failed to enable OLED reset");
+    }
+#endif
+#if PCA9535_AUDIO_ENABLE_PIN < 16
+    if (!audioAmpOk) {
+        LOG_WARN("Wio LR2021: failed to configure PCA9535 audio amp enable");
+    }
+#endif
+#if PCA9535_LORA_RESET_PIN < 16
+    if (!loraResetOk) {
+        LOG_WARN("Wio LR2021: failed to configure PCA9535 LoRa reset");
+    }
+#endif
+#if PCA9535_BAT_ENABLE_PIN < 16
+    if (!batAdcOk) {
+        LOG_WARN("Wio LR2021: failed to configure PCA9535 BatAdc enbale");
+    }
+#endif
+
 #if defined(HAS_I2S)
     audioPins.addI2C(PinFunction::CODEC, Wire);
     audioPins.addI2S(PinFunction::CODEC, DAC_I2S_MCLK, DAC_I2S_BCK, DAC_I2S_WS, DAC_I2S_DOUT, DAC_I2S_DIN);
@@ -107,7 +140,7 @@ void lateInitVariant()
     config.i2s.rate = RATE_22K;
 
     if (audioBoard.begin(config)) {
-        audioBoard.setVolume(50); // ES8311 DAC volume, 0~100
+        audioBoard.setVolume(70); // ES8311 DAC volume, 0~100
         LOG_INFO("Wio LR2021: ES8311 initialized at 22.05 kHz");
     } else {
         LOG_WARN("Wio LR2021: failed to initialize ES8311");
@@ -121,24 +154,24 @@ void earlyInitVariant()
 
 #if PCA9535_OLED_ENABLE_PIN < 16
     const bool oledEnabled = PCA9535_OLED_ENABLE_LEVEL == HIGH;
-    if (!configurePca9535Output(PCA9535_OLED_ENABLE_PIN, oledEnabled)) {
-        LOG_WARN("Wio LR2021: failed to enable OLED power");
-    }
+    oledPowerOk = configurePca9535Output(PCA9535_OLED_ENABLE_PIN, oledEnabled);
+    // Hold the panel in reset while its rail stabilises, then release (resets are active low).
+    configurePca9535Output(PCA9535_OLED_RESET_PIN, false);
+    delay(20);
+    oledResetOk = configurePca9535Output(PCA9535_OLED_RESET_PIN, true);
 #endif
 
 #if PCA9535_AUDIO_ENABLE_PIN < 16
-    if (!configurePca9535Output(PCA9535_AUDIO_ENABLE_PIN, true)) {
-        LOG_WARN("Wio LR2021: failed to configure PCA9535 audio amp enable");
-    }
+    audioAmpOk = configurePca9535Output(PCA9535_AUDIO_ENABLE_PIN, true);
 #endif
 
 #if PCA9535_LORA_RESET_PIN < 16
-    if (!configurePca9535Output(PCA9535_LORA_RESET_PIN, true)) {
-        LOG_WARN("Wio LR2021: failed to configure PCA9535 LoRa reset");
-    }
+    loraResetOk = configurePca9535Output(PCA9535_LORA_RESET_PIN, true);
 #endif
 
-
+#if PCA9535_BAT_ENABLE_PIN <16
+    batAdcOk =  configurePca9535Output(PCA9535_BAT_ENABLE_PIN, true);
+#endif
 }
 
 #endif

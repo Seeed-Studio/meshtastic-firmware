@@ -102,9 +102,9 @@ bool ButtonThread::initButton(const ButtonConfig &config)
 #endif
     userButton.setPressMs(_longPressTime);
 
-    if (config.doublePress != INPUT_BROKER_NONE || config.triplePress != INPUT_BROKER_NONE) {
-        userButton.setClickMs(BUTTON_CLICK_MS);
-    } else if (screen) {
+    // The 20ms window a screen normally gets closes before a second click can land, so boards
+    // binding double or multi click need the full one.
+    if (screen && _doublePress == INPUT_BROKER_NONE && _triplePress == INPUT_BROKER_NONE) {
         userButton.setClickMs(20);
     } else {
         userButton.setClickMs(BUTTON_CLICK_MS);
