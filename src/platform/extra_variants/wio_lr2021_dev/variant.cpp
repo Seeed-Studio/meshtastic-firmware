@@ -4,79 +4,18 @@
 
 #include <Wire.h>
 
+#include "Observer.h"
+#include "sleep.h"
+
+#include PCA95X5_INC
+extern PCA95X5_CLS io;
+
 #ifdef HAS_I2S
 #include "AudioBoard.h"
 #endif
 
 namespace
 {
-constexpr uint8_t PCA_OUTPUT_PORT_0 = 0x02;
-constexpr uint8_t PCA_CONFIG_PORT_0 = 0x06;
-
-bool readPca9535Register(uint8_t reg, uint8_t &value)
-{
-    Wire.beginTransmission(WIO_LR2021_PCA9535_ADDR);
-    Wire.write(reg);
-    if (Wire.endTransmission(false) != 0 ||
-        Wire.requestFrom((uint8_t)WIO_LR2021_PCA9535_ADDR, (uint8_t)1) != 1) {
-        return false;
-    }
-
-    value = Wire.read();
-    return true;
-}
-
-bool writePca9535Register(uint8_t reg, uint8_t value)
-{
-    Wire.beginTransmission(WIO_LR2021_PCA9535_ADDR);
-    Wire.write(reg);
-    Wire.write(value);
-    return Wire.endTransmission() == 0;
-}
-
-bool configurePca9535Pin(uint8_t pin, bool input)
-{
-    if (pin >= 16) {
-        return false;
-    }
-
-    const uint8_t port = pin / 8;
-    const uint8_t mask = 1U << (pin % 8);
-    uint8_t config = 0xff;
-    if (!readPca9535Register(PCA_CONFIG_PORT_0 + port, config)) {
-        return false;
-    }
-
-    config = input ? config | mask : config & ~mask;
-    return writePca9535Register(PCA_CONFIG_PORT_0 + port, config);
-}
-
-bool writePca9535Pin(uint8_t pin, bool high)
-{
-    if (pin >= 16) {
-        return false;
-    }
-
-    const uint8_t port = pin / 8;
-    const uint8_t mask = 1U << (pin % 8);
-    uint8_t output = 0;
-    if (!readPca9535Register(PCA_OUTPUT_PORT_0 + port, output)) {
-        return false;
-    }
-
-    output = high ? output | mask : output & ~mask;
-    return writePca9535Register(PCA_OUTPUT_PORT_0 + port, output);
-}
-
-bool configurePca9535Output(uint8_t pin, bool initialHigh)
-{
-    if (!writePca9535Pin(pin, initialHigh)) {
-        return false;
-    }
-
-    return configurePca9535Pin(pin, false);
-}
-
 #ifdef HAS_I2S
 DriverPins audioPins;
 AudioBoard audioBoard(AudioDriverES8311, audioPins);
@@ -85,17 +24,19 @@ AudioBoard audioBoard(AudioDriverES8311, audioPins);
 // earlyInitVariant() runs before consoleInit(): a LOG_* call there crashes the device
 // (see extra_variants/README.md). PCA9535 results are stashed here and reported from
 // lateInitVariant() instead.
+bool pca9535Ok = false;
 bool oledPowerOk = false;
 bool oledResetOk = false;
 bool audioAmpOk = false;
 bool loraResetOk = false;
 bool batAdcOk = false;
+bool ledOk = false;
 } // namespace
 
 #if defined(HAS_I2S) && PCA9535_AUDIO_ENABLE_PIN < 16
 void wioLr2021SetAudioAmp(bool enabled)
 {
-    writePca9535Pin(PCA9535_AUDIO_ENABLE_PIN, enabled);
+    io.digitalWrite(PCA9535_AUDIO_ENABLE_PIN, enabled);
 }
 #elif defined(HAS_I2S)
 void wioLr2021SetAudioAmp(bool)
@@ -103,8 +44,35 @@ void wioLr2021SetAudioAmp(bool)
 }
 #endif
 
+// PCA9535 outputs stay latched through ESP32 deep sleep; drop these rails before sleeping.
+struct DeepSleepPowerOff {
+    int onDeepSleep(void *)
+    {
+        io.digitalWrite(PCA9535_OLED_ENABLE_PIN, false);
+        io.digitalWrite(PCA9535_OLED_RESET_PIN, false);
+        io.digitalWrite(PCA9535_AUDIO_ENABLE_PIN, false);
+        io.digitalWrite(PCA9535_BAT_ENABLE_PIN, false);
+#ifdef PCA_LED_POWER
+        io.digitalWrite(PCA_LED_POWER, LED_STATE_OFF); // expander outputs latch through deep sleep
+#endif
+        return 0;
+    }
+    CallbackObserver<DeepSleepPowerOff, void *> observer{this, &DeepSleepPowerOff::onDeepSleep};
+} static deepSleepPowerOff;
+
 void lateInitVariant()
 {
+    deepSleepPowerOff.observer.observe(&notifyDeepSleep);
+
+    if (!pca9535Ok) {
+        LOG_WARN("Wio LR2021: failed to init PCA9535");
+    }
+#ifdef PCA_LED_POWER
+    if (!ledOk) {
+        LOG_WARN("Wio LR2021: failed to init status LED");
+    }
+#endif
+
 #if PCA9535_OLED_ENABLE_PIN < 16
     if (!oledPowerOk) {
         LOG_WARN("Wio LR2021: failed to enable OLED power");
@@ -125,7 +93,7 @@ void lateInitVariant()
 #endif
 #if PCA9535_BAT_ENABLE_PIN < 16
     if (!batAdcOk) {
-        LOG_WARN("Wio LR2021: failed to configure PCA9535 BatAdc enbale");
+        LOG_WARN("Wio LR2021: failed to configure PCA9535 BatAdc enable");
     }
 #endif
 
@@ -152,25 +120,37 @@ void earlyInitVariant()
 {
     Wire.begin(I2C_SDA, I2C_SCL);
 
+    pca9535Ok = io.begin(Wire, WIO_LR2021_PCA9535_ADDR);
+
 #if PCA9535_OLED_ENABLE_PIN < 16
     const bool oledEnabled = PCA9535_OLED_ENABLE_LEVEL == HIGH;
-    oledPowerOk = configurePca9535Output(PCA9535_OLED_ENABLE_PIN, oledEnabled);
+    io.digitalWrite(PCA9535_OLED_ENABLE_PIN, oledEnabled);
+    oledPowerOk = io.pinMode(PCA9535_OLED_ENABLE_PIN, OUTPUT);
     // Hold the panel in reset while its rail stabilises, then release (resets are active low).
-    configurePca9535Output(PCA9535_OLED_RESET_PIN, false);
+    io.digitalWrite(PCA9535_OLED_RESET_PIN, false);
+    oledResetOk = io.pinMode(PCA9535_OLED_RESET_PIN, OUTPUT);
     delay(20);
-    oledResetOk = configurePca9535Output(PCA9535_OLED_RESET_PIN, true);
+    oledResetOk = io.digitalWrite(PCA9535_OLED_RESET_PIN, true) && oledResetOk;
 #endif
 
 #if PCA9535_AUDIO_ENABLE_PIN < 16
-    audioAmpOk = configurePca9535Output(PCA9535_AUDIO_ENABLE_PIN, true);
+    io.digitalWrite(PCA9535_AUDIO_ENABLE_PIN, true);
+    audioAmpOk = io.pinMode(PCA9535_AUDIO_ENABLE_PIN, OUTPUT);
 #endif
 
 #if PCA9535_LORA_RESET_PIN < 16
-    loraResetOk = configurePca9535Output(PCA9535_LORA_RESET_PIN, true);
+    io.digitalWrite(PCA9535_LORA_RESET_PIN, true);
+    loraResetOk = io.pinMode(PCA9535_LORA_RESET_PIN, OUTPUT);
 #endif
 
-#if PCA9535_BAT_ENABLE_PIN <16
-    batAdcOk =  configurePca9535Output(PCA9535_BAT_ENABLE_PIN, true);
+#if PCA9535_BAT_ENABLE_PIN < 16
+    io.digitalWrite(PCA9535_BAT_ENABLE_PIN, true);
+    batAdcOk = io.pinMode(PCA9535_BAT_ENABLE_PIN, OUTPUT);
+#endif
+
+#ifdef PCA_LED_POWER
+    io.digitalWrite(PCA_LED_POWER, LED_STATE_OFF);
+    ledOk = io.pinMode(PCA_LED_POWER, OUTPUT);
 #endif
 }
 

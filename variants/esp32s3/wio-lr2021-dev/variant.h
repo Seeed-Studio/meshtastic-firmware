@@ -28,9 +28,7 @@
 #define LR2021_NRESET_PIN   WIO_LR2021_PIN_NC
 #define LR2021_BUSY_PIN     7
 #define LR2021_IRQ_DIO_NUM  8
-// The module reference is a TCXO powered through the radio (same as Seeed mesh tracker X1).
-// Without this, setTCXO() is skipped, the HF XOSC never starts, and every calibration
-// fails with device error 0x2081 (HF_XOSC_START | IMG_CALIB | SRC_CALIB).
+
 #define LR2021_DIO3_TCXO_VOLTAGE 3.0
 
 // BOOT is the primary BaseUI button. The second button is a direct ESP32-S3 GPIO.
@@ -48,9 +46,15 @@
 #define ALT_BUTTON_LONG_PRESS_EVENT   INPUT_BROKER_UP
 #endif
 
-// PCA9535 (A0/A1/A2 low by default). Ports use the range 0..15.
+// PCA9535. Ports use the range 0..15. Pca9555.h is register-compatible with the
+// PCA9535 and provides the shared global `io` object used by core code (LED hooks,
+// sleep) and this variant.
 #define WIO_LR2021_PCA9535_ADDR     0x21
 #define WIO_LR2021_PCA9535_INT      3
+
+#define USE_PCA95X5
+#define PCA95X5_CLS Pca9555
+#define PCA95X5_INC "Pca9555.h"
 
 #define PCA9535_OLED_ENABLE_PIN     3
 #define PCA9535_OLED_RESET_PIN      5
@@ -58,6 +62,12 @@
 #define PCA9535_AUDIO_ENABLE_PIN    2
 #define PCA9535_LORA_RESET_PIN      11
 #define PCA9535_BAT_ENABLE_PIN      8
+#define PCA9535_LED_PIN             6
+
+// Status LED, driven by core StatusLEDModule through the io object above
+// (charge/heartbeat/critical-battery states). Active-low.
+#define PCA_LED_POWER PCA9535_LED_PIN
+#define LED_STATE_ON 0
 
 // ES8311 codec and I2S speaker.
 #define ES8311_I2C_ADDR      0x18
@@ -71,13 +81,6 @@
 #define HAS_I2S
 void wioLr2021SetAudioAmp(bool enabled);
 // #define AUDIO_AMP_ENABLE(on) wioLr2021SetAudioAmp(on)
-#endif
-
-// Status LED. Set LED_STATE_ON to LOW for an active-low LED.
-#define WIO_LR2021_LED_PIN WIO_LR2021_PIN_NC
-#if WIO_LR2021_LED_PIN >= 0
-#define LED_PIN WIO_LR2021_LED_PIN
-#define LED_STATE_ON HIGH
 #endif
 
 // Optional battery ADC. Set the divider ratio before enabling this pin.

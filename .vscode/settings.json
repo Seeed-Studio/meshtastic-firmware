@@ -10,5 +10,6 @@
   },
   "[powershell]": {
     "editor.defaultFormatter": "ms-vscode.powershell"
-  }
+  },
+  "idf.currentSetup": "C:\\esp\\v5.5.4\\esp-idf"
 }
