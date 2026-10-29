@@ -139,8 +139,10 @@ void earlyInitVariant()
 #endif
 
 #if PCA9535_LORA_RESET_PIN < 16
-    io.digitalWrite(PCA9535_LORA_RESET_PIN, true);
+    io.digitalWrite(PCA9535_LORA_RESET_PIN, false);
     loraResetOk = io.pinMode(PCA9535_LORA_RESET_PIN, OUTPUT);
+    delay(20);
+    io.digitalWrite(PCA9535_LORA_RESET_PIN, true);
 #endif
 
 #if PCA9535_BAT_ENABLE_PIN < 16
